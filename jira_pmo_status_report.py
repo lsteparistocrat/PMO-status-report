@@ -58,7 +58,7 @@ def detect_fields(requested: List[str], all_fields: List[Dict[str,Any]]) -> List
     return out
 
 def jira_search(base: str, email: str, token: str, jql: str, fields: List[str], max_issues: int=1000, batch_size: int=200) -> List[Dict[str,Any]]:
-    url = f"{base}/rest/api/3/search"
+    url = f"{base}/rest/api/3/search/jql"
     h,a = jira_auth(email, token)
     out = []
     start_at = 0
