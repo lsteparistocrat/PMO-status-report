@@ -114,6 +114,12 @@ def issue_status_name(issue: Dict[str,Any]) -> str:
     st = (issue.get("fields") or {}).get("status") or {}
     return (st.get("name") or st.get("statusCategory",{}).get("name") or "").strip()
 
+def issue_status_category(issue: Dict[str,Any]) -> str:
+    st = (issue.get("fields") or {}).get("status") or {}
+    cat = (st.get("statusCategory") or {}).get("name") or ""
+    return str(cat).strip()
+
+
 def issue_key(issue: Dict[str,Any]) -> str:
     return issue.get("key") or ""
 
@@ -137,6 +143,12 @@ def is_open(issue: Dict[str,Any]) -> bool:
     return st not in {"done", "closed", "resolved"}
 
 def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str,str], tzname: str) -> Tuple[str, str]:
+    base_url = env("JIRA_BASE_URL","").rstrip("/")
+    def key_link(k: str) -> str:
+        if not k or not base_url:
+            return k
+        return f"[{k}]({base_url}/browse/{k})"
+
     root_type = issue_type(root)
     root_key = issue_key(root)
     root_summary = field_text(root, "summary")
@@ -157,13 +169,17 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
 
     lines: List[str] = []
 
+    # Title with root key hyperlinked
     title = f"{root_key} — {root_summary}".strip(" —")
+    title_md = f"[{root_key}]({base_url}/browse/{root_key}) — {root_summary}" if base_url and root_key else title
 
     def bullet_or_none(items: List[str]) -> List[str]:
         return items if items else ["None"]
 
     def format_item(it: Dict[str,Any], extra_bits: List[str]) -> str:
-        bits = [f"{issue_key(it)} — {field_text(it,'summary')}"] + [b for b in extra_bits if b]
+        k = issue_key(it)
+        k_md = key_link(k)
+        bits = [f"{k_md} — {field_text(it,'summary')}"] + [b for b in extra_bits if b]
         return f"- " + " | ".join(bits)
 
     # Weekly updates
@@ -174,7 +190,7 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
         for p in projects:
             wu = field_text(p, weekly_field)
             if wu:
-                weekly_lines.append(f"- **{issue_key(p)} — {field_text(p,'summary')}**: {wu}")
+                weekly_lines.append(f"- **{key_link(issue_key(p))} — {field_text(p,'summary')}**: {wu}")
         if not weekly_lines:
             weekly_lines = ["- None"]
     else:
@@ -185,14 +201,33 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
 
     # Upcoming Milestones
     lines.append("Upcoming Milestones:")
-    milestones = [it for it in by_type.get(milestone_type, []) if is_open(it)]
+    # Only milestones in 'In Progress' statusCategory
+    all_milestones = [it for it in by_type.get(milestone_type, []) if is_open(it)]
+    milestones = [it for it in all_milestones if issue_status_category(it).lower() == "in progress"]
+    # Sort by Target end date ascending (empty dates last)
+    def _date_key(it):
+        raw = field_text(it, milestone_target_end)
+        try:
+            s = raw.replace("+0000","+00:00") if raw else ""
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            from datetime import datetime
+            return (0, datetime.fromisoformat(s)) if s else (1, datetime.max)
+        except Exception:
+            from datetime import datetime
+            return (1, datetime.max)
+    milestones.sort(key=_date_key)
+
     milestone_lines: List[str] = []
     for m in milestones:
-        key = issue_key(m)
+        k = issue_key(m)
+        k_md = key_link(k)
         summ = field_text(m, "summary")
-        tgt = fmt_date(field_text(m, milestone_target_end), tzname)
+        raw_date = field_text(m, milestone_target_end)
+        tgt = fmt_date(raw_date, tzname)
+        tgt_md = f"**{tgt}**" if tgt else "-"
         rag = field_text(m, milestone_rag)
-        milestone_lines.append(f"- {key} — {summ} | Target end: {tgt or '-'} | RAG: {rag or '-'}")
+        milestone_lines.append(f"- {k_md} — {summ} | Target end: {tgt_md} | RAG: {rag or '-'}")
     lines.extend(bullet_or_none(milestone_lines))
     lines.append("")
 
@@ -204,13 +239,13 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
             extra = []
             for col in extra_cols:
                 if col == "__status":
-                    extra.append(f"Status: {issue_status_name(it)}")
+                    extra.append(f"Status: **{issue_status_name(it)}**")
                 elif col == "__assignee":
                     who = field_text(it, "assignee")
-                    if who: extra.append(f"Assignee: {who}")
+                    if who: extra.append(f"Assignee: **{who}**")
                 elif col == "__risk_score":
                     rs = field_text(it, cfg["RISK_SCORE_FIELD"])
-                    if rs: extra.append(f"Aristocrat risk score: {rs}")
+                    if rs: extra.append(f"Aristocrat risk score: **{rs}**")
                 else:
                     val = field_text(it, col)
                     if val: extra.append(f"{col}: {val}")
@@ -232,7 +267,7 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
         section("Decisions", decision_t, ["__status","__assignee"])
         section("Change requests", change_req_t, ["__status","__assignee"])
 
-    text = f"# {title}\n\n" + "\n".join(lines).rstrip() + "\n"
+    text = f"# {title_md}\n\n" + "\n".join(lines).rstrip() + "\n"
     return title, text
 
 def post_to_teams(webhook_url: str, title: str, text: str) -> None:
@@ -263,6 +298,13 @@ def main():
     if missing:
         print("Missing required configuration values: " + ", ".join(missing), file=sys.stderr)
         sys.exit(2)
+
+
+    # Optionally force scope JQL to the provided ROOT_ISSUE_KEY
+    force_scope = os.getenv("FORCE_SCOPE_TO_ROOT", "true").strip().lower() in {"1","true","yes","y","on"}
+    if root_hint and force_scope:
+        jql = f'(key in (portfolioChildIssuesOf("{root_hint}")) OR key in ("{root_hint}")) AND statusCategory not in (Done)'
+        print(f"FORCE_SCOPE_TO_ROOT is ON. Using JQL derived from ROOT_ISSUE_KEY: {jql}")
 
     cfg = {
         "WEEKLY_UPDATE_FIELD": env("WEEKLY_UPDATE_FIELD","customfield_weekly_update"),
