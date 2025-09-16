@@ -114,6 +114,12 @@ def issue_status_name(issue: Dict[str,Any]) -> str:
     st = (issue.get("fields") or {}).get("status") or {}
     return (st.get("name") or st.get("statusCategory",{}).get("name") or "").strip()
 
+def issue_status_category(issue: Dict[str,Any]) -> str:
+    st = (issue.get("fields") or {}).get("status") or {}
+    cat = (st.get("statusCategory") or {}).get("name") or ""
+    return str(cat).strip()
+
+
 def issue_key(issue: Dict[str,Any]) -> str:
     return issue.get("key") or ""
 
