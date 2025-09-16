@@ -30,8 +30,6 @@ jobs:
           JIRA_JQL: ${{ secrets.JIRA_JQL }}
           # You can leave JIRA_FIELDS empty to auto-populate sensible defaults, or override with a CSV list of Jira field IDs
           JIRA_FIELDS: ${{ secrets.JIRA_FIELDS }}
-          # If you know the root issue key (e.g., PMO-904), set this to help the script identify the Initiative/Project faster.
-          ROOT_ISSUE_KEY: ${{ secrets.ROOT_ISSUE_KEY }}
 
           # --- Teams ---
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
@@ -40,6 +38,7 @@ jobs:
 
           # --- Customization knobs (set as repo/env vars or leave defaults) ---
           # Field IDs / Names
+          ROOT_ISSUE_KEY: ${{ vars.ROOT_ISSUE_KEY }}        # If you know the root issue key (e.g., PMO-904), set this to help the script identify the Initiative/Project faster.
           WEEKLY_UPDATE_FIELD: ${{ vars.WEEKLY_UPDATE_FIELD }}           # e.g., customfield_12345
           MILESTONE_TYPE_NAME: ${{ vars.MILESTONE_TYPE_NAME || 'Milestone' }}
           MILESTONE_TARGET_END_FIELD: ${{ vars.MILESTONE_TARGET_END_FIELD || 'duedate' }}  # or customfield_xxxxx
