@@ -1,0 +1,63 @@
+name: Jira PMO Status Report to Teams
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # Every Monday at 06:00 UTC
+
+jobs:
+  jira-pmo-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run PMO report
+        env:
+          # --- Jira auth/config ---
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          # Use the PMO Initiative JQL the user provided (adjust the key as needed via the secret or env override)
+          JIRA_JQL: ${{ secrets.JIRA_JQL }}
+          # You can leave JIRA_FIELDS empty to auto-populate sensible defaults, or override with a CSV list of Jira field IDs
+          JIRA_FIELDS: ${{ secrets.JIRA_FIELDS }}
+          
+          # --- PMO Initiative ---
+          ROOT_ISSUE_KEY: "PMO-904"
+
+          # --- Teams ---
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          TITLE: "Weekly PMO Jira Status Report"
+          TIMEZONE: "UTC"
+
+          # --- Customization knobs (set as repo/env vars or leave defaults) ---
+          # Field IDs / Names
+          WEEKLY_UPDATE_FIELD: ${{ vars.WEEKLY_UPDATE_FIELD }}           # e.g., customfield_12345
+          MILESTONE_TYPE_NAME: ${{ vars.MILESTONE_TYPE_NAME || 'Milestone' }}
+          MILESTONE_TARGET_END_FIELD: ${{ vars.MILESTONE_TARGET_END_FIELD || 'duedate' }}  # or customfield_xxxxx
+          MILESTONE_RAG_FIELD: ${{ vars.MILESTONE_RAG_FIELD || 'customfield_rag' }}
+          INITIATIVE_RISK_TYPE_NAME: ${{ vars.INITIATIVE_RISK_TYPE_NAME || 'InitiativeRisk' }}
+          ASSUMPTION_TYPE_NAME: ${{ vars.ASSUMPTION_TYPE_NAME || 'Assumption' }}
+          ISSUE_TYPE_NAME: ${{ vars.ISSUE_TYPE_NAME || 'Issue' }}
+          DECISION_TYPE_NAME: ${{ vars.DECISION_TYPE_NAME || 'Decision' }}
+          CHANGE_REQ_TYPE_NAME: ${{ vars.CHANGE_REQ_TYPE_NAME || 'Change req' }}
+          PROJECT_TYPE_NAME: ${{ vars.PROJECT_TYPE_NAME || 'Project' }}
+          INITIATIVE_TYPE_NAME: ${{ vars.INITIATIVE_TYPE_NAME || 'PMO Initiative' }}
+
+          # Risk score field (number)
+          RISK_SCORE_FIELD: ${{ vars.RISK_SCORE_FIELD || 'customfield_riskscore' }}
+
+          # Limits
+          MAX_ISSUES: "1000"
+          BATCH_SIZE: "200"
+        run: |
+          python jira_pmo_status_report.py
