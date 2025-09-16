@@ -2,8 +2,9 @@
 """
 Jira → Teams PMO Status report
 
+- Uses new Jira Cloud search endpoint: POST /rest/api/3/search/jql
+- Paginates with nextPageToken
 - Detects whether ROOT is a PMO Initiative or a Project
-- Uses the provided JQL to gather all relevant items
 - Formats per the user's required structure
 """
 import os, sys, json
@@ -18,10 +19,6 @@ except Exception:
 
 def env(name: str, default: Optional[str]=None) -> Optional[str]:
     return os.getenv(name, default)
-
-def parse_bool(v: Optional[str], default=False) -> bool:
-    if v is None: return default
-    return v.strip().lower() in {"1","true","yes","y","on"}
 
 def jira_auth(email: str, token: str):
     return {"Accept":"application/json","Content-Type":"application/json"}, (email, token)
@@ -54,24 +51,38 @@ def detect_fields(requested: List[str], all_fields: List[Dict[str,Any]]) -> List
         if f in known_ids or f in known_names:
             out.append(f)
         else:
-            out.append(f)  # let server decide; Jira usually ignores unknowns
+            out.append(f)  # let server decide; Jira may ignore unknowns
     return out
 
 def jira_search(base: str, email: str, token: str, jql: str, fields: List[str], max_issues: int=1000, batch_size: int=200) -> List[Dict[str,Any]]:
+    """
+    Uses POST /rest/api/3/search/jql with nextPageToken pagination.
+    """
     url = f"{base}/rest/api/3/search/jql"
     h,a = jira_auth(email, token)
-    out = []
-    start_at = 0
+    out: List[Dict[str,Any]] = []
+    next_token = None
+
+    # Ensure fields is a list of strings (API expects array)
+    fields_list = list(fields or [])
+
     while len(out) < max_issues:
-        payload = {"jql": jql, "startAt": start_at, "maxResults": min(batch_size, max_issues-len(out)), "fields": fields}
+        payload = {
+            "jql": jql,
+            "maxResults": min(batch_size, max_issues - len(out)),
+            "fields": fields_list,
+            # Atlassian bug/workaround: explicitly set null for first page
+            "nextPageToken": next_token if next_token is not None else None,
+        }
         r = requests.post(url, headers=h, auth=a, data=json.dumps(payload), timeout=60)
         if r.status_code != 200:
             raise RuntimeError(f"Jira error {r.status_code}: {r.text[:400]}")
         data = r.json()
-        batch = data.get("issues", [])
+        batch = data.get("issues", []) or []
         out.extend(batch)
-        if not batch: break
-        start_at += len(batch)
+        next_token = data.get("nextPageToken")
+        if not batch or not next_token:
+            break
     return out
 
 def field(issue: Dict[str,Any], key: str):
@@ -215,7 +226,6 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
         section("Decisions", decision_t, ["__status","__assignee"])
         section("Change requests", change_req_t, ["__status","__assignee"])
     else:
-        # For now, project-level uses same pool but filtered by open status (hierarchy parent filtering can be added if needed)
         section("Risks", init_risk_type, ["__status","__risk_score","__assignee"])
         section("Assumptions", assumption_type, ["__status","__assignee"])
         section("Issues", issue_t, ["__status","__assignee"])
@@ -275,7 +285,6 @@ def main():
                   ]
     if fields_csv:
         req_fields = [s.strip() for s in fields_csv.split(",") if s.strip()]
-        # de-dup while preserving order
         seen = set()
         req_fields = [x for x in req_fields + base_fields if (x not in seen and not seen.add(x))]
     else:
