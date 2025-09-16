@@ -299,6 +299,13 @@ def main():
         print("Missing required configuration values: " + ", ".join(missing), file=sys.stderr)
         sys.exit(2)
 
+
+    # Optionally force scope JQL to the provided ROOT_ISSUE_KEY
+    force_scope = os.getenv("FORCE_SCOPE_TO_ROOT", "true").strip().lower() in {"1","true","yes","y","on"}
+    if root_hint and force_scope:
+        jql = f'(key in (portfolioChildIssuesOf("{root_hint}")) OR key in ("{root_hint}")) AND statusCategory not in (Done)'
+        print(f"FORCE_SCOPE_TO_ROOT is ON. Using JQL derived from ROOT_ISSUE_KEY: {jql}")
+
     cfg = {
         "WEEKLY_UPDATE_FIELD": env("WEEKLY_UPDATE_FIELD","customfield_weekly_update"),
         "MILESTONE_TYPE_NAME": env("MILESTONE_TYPE_NAME","Milestone"),
