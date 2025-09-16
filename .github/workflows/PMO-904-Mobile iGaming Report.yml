@@ -1,4 +1,4 @@
-name: Jira PMO Status Report to Teams
+name: PMO-904-Mobile iGaming Report
 
 on:
   workflow_dispatch:
