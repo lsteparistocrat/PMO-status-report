@@ -195,15 +195,33 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
 
     # Upcoming Milestones
     lines.append("Upcoming Milestones:")
-    milestones = [it for it in by_type.get(milestone_type, []) if is_open(it)]
+    # Only milestones in 'In Progress' statusCategory
+    all_milestones = [it for it in by_type.get(milestone_type, []) if is_open(it)]
+    milestones = [it for it in all_milestones if issue_status_category(it).lower() == "in progress"]
+    # Sort by Target end date ascending (empty dates last)
+    def _date_key(it):
+        raw = field_text(it, milestone_target_end)
+        try:
+            s = raw.replace("+0000","+00:00") if raw else ""
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            from datetime import datetime
+            return (0, datetime.fromisoformat(s)) if s else (1, datetime.max)
+        except Exception:
+            from datetime import datetime
+            return (1, datetime.max)
+    milestones.sort(key=_date_key)
+
     milestone_lines: List[str] = []
     for m in milestones:
         k = issue_key(m)
         k_md = key_link(k)
         summ = field_text(m, "summary")
-        tgt = fmt_date(field_text(m, milestone_target_end), tzname)
+        raw_date = field_text(m, milestone_target_end)
+        tgt = fmt_date(raw_date, tzname)
+        tgt_md = f"**{tgt}**" if tgt else "-"
         rag = field_text(m, milestone_rag)
-        milestone_lines.append(f"- {k_md} — {summ} | Target end: {tgt or '-'} | RAG: {rag or '-'}")
+        milestone_lines.append(f"- {k_md} — {summ} | Target end: {tgt_md} | RAG: {rag or '-'}")
     lines.extend(bullet_or_none(milestone_lines))
     lines.append("")
 
