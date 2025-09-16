@@ -137,6 +137,12 @@ def is_open(issue: Dict[str,Any]) -> bool:
     return st not in {"done", "closed", "resolved"}
 
 def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str,str], tzname: str) -> Tuple[str, str]:
+    base_url = env("JIRA_BASE_URL","").rstrip("/")
+    def key_link(k: str) -> str:
+        if not k or not base_url:
+            return k
+        return f"[{k}]({base_url}/browse/{k})"
+
     root_type = issue_type(root)
     root_key = issue_key(root)
     root_summary = field_text(root, "summary")
@@ -157,13 +163,17 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
 
     lines: List[str] = []
 
+    # Title with root key hyperlinked
     title = f"{root_key} — {root_summary}".strip(" —")
+    title_md = f"[{root_key}]({base_url}/browse/{root_key}) — {root_summary}" if base_url and root_key else title
 
     def bullet_or_none(items: List[str]) -> List[str]:
         return items if items else ["None"]
 
     def format_item(it: Dict[str,Any], extra_bits: List[str]) -> str:
-        bits = [f"{issue_key(it)} — {field_text(it,'summary')}"] + [b for b in extra_bits if b]
+        k = issue_key(it)
+        k_md = key_link(k)
+        bits = [f"{k_md} — {field_text(it,'summary')}"] + [b for b in extra_bits if b]
         return f"- " + " | ".join(bits)
 
     # Weekly updates
@@ -174,7 +184,7 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
         for p in projects:
             wu = field_text(p, weekly_field)
             if wu:
-                weekly_lines.append(f"- **{issue_key(p)} — {field_text(p,'summary')}**: {wu}")
+                weekly_lines.append(f"- **{key_link(issue_key(p))} — {field_text(p,'summary')}**: {wu}")
         if not weekly_lines:
             weekly_lines = ["- None"]
     else:
@@ -188,11 +198,12 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
     milestones = [it for it in by_type.get(milestone_type, []) if is_open(it)]
     milestone_lines: List[str] = []
     for m in milestones:
-        key = issue_key(m)
+        k = issue_key(m)
+        k_md = key_link(k)
         summ = field_text(m, "summary")
         tgt = fmt_date(field_text(m, milestone_target_end), tzname)
         rag = field_text(m, milestone_rag)
-        milestone_lines.append(f"- {key} — {summ} | Target end: {tgt or '-'} | RAG: {rag or '-'}")
+        milestone_lines.append(f"- {k_md} — {summ} | Target end: {tgt or '-'} | RAG: {rag or '-'}")
     lines.extend(bullet_or_none(milestone_lines))
     lines.append("")
 
@@ -232,7 +243,7 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
         section("Decisions", decision_t, ["__status","__assignee"])
         section("Change requests", change_req_t, ["__status","__assignee"])
 
-    text = f"# {title}\n\n" + "\n".join(lines).rstrip() + "\n"
+    text = f"# {title_md}\n\n" + "\n".join(lines).rstrip() + "\n"
     return title, text
 
 def post_to_teams(webhook_url: str, title: str, text: str) -> None:
