@@ -239,13 +239,13 @@ def build_report(issues: List[Dict[str,Any]], root: Dict[str,Any], cfg: Dict[str
             extra = []
             for col in extra_cols:
                 if col == "__status":
-                    extra.append(f"Status: {issue_status_name(it)}")
+                    extra.append(f"Status: **{issue_status_name(it)}**")
                 elif col == "__assignee":
                     who = field_text(it, "assignee")
-                    if who: extra.append(f"Assignee: {who}")
+                    if who: extra.append(f"Assignee: **{who}**")
                 elif col == "__risk_score":
                     rs = field_text(it, cfg["RISK_SCORE_FIELD"])
-                    if rs: extra.append(f"Aristocrat risk score: {rs}")
+                    if rs: extra.append(f"Aristocrat risk score: **{rs}**")
                 else:
                     val = field_text(it, col)
                     if val: extra.append(f"{col}: {val}")
